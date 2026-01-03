@@ -60,14 +60,15 @@
   /* CAKE */
   .cake-wrap {
     position: relative;
-    margin-top: 20px;
+    /* increased top margin so the candle doesn't overlap the header */
+    margin-top: 60px;
   }
 
   .cake {
     position: relative;
     width: 320px;
     height: 180px;
-    margin: auto;
+    margin: 0 auto;
     background: linear-gradient(#fef0e6, #fbb6ce);
     border-radius: 20px;
     box-shadow: 0 12px 28px rgba(0,0,0,0.25);
@@ -96,7 +97,8 @@
   /* realistic candle */
   .candle {
     position: absolute;
-    top: -65px;
+    /* moved candle a bit closer to cake so it doesn't reach up and overlap header */
+    top: -50px;
     left: 155px;
     width: 12px;
     height: 60px;
@@ -120,11 +122,11 @@
     50% { transform: scale(1.15); opacity: 0.9; }
   }
 
-  /* ENVELOPE */
+  /* ENVELOPE (moved BELOW the cake in the DOM) */
   .envelope {
-    position: absolute;
-    right: -90px;
-    top: 35px;
+    position: relative;
+    display: inline-block;
+    margin: 12px auto 0;
     font-size: 64px;
     cursor: pointer;
     color: #f472b6;
@@ -135,16 +137,16 @@
   }
 
   .envelope-hint {
-    position: absolute;
-    right: -130px;
-    top: 120px;
+    display: inline-block;
+    margin: 8px auto 0;
     font-size: 16px;
     font-weight: 600;
     color: #374151;
-    background: rgba(255,255,255,0.7);
-    padding: 4px 8px;
+    background: rgba(255,255,255,0.8);
+    padding: 6px 10px;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    cursor: pointer;
   }
 
   /* MESSAGE MODAL */
@@ -155,7 +157,7 @@
     display: none;
     align-items: center;
     justify-content: center;
-    z-index: 20;
+    z-index: 30;
   }
 
   .modal-content {
@@ -170,14 +172,27 @@
   /* FALLING ELEMENTS */
   .fall {
     position: absolute;
-    top: -60px;
+    top: -80px;
+    pointer-events: none; /* won't block clicks */
+    opacity: 0.95;
+    z-index: 6;
+    /* duration and delay are set inline */
+  }
+
+  /* the inner element will sway/rotate while the outer falls (so transforms don't conflict) */
+  .fall-inner {
+    display: inline-block;
     font-size: 32px;
-    opacity: 0.85;
-    animation: fall linear infinite;
+    animation: sway 2.2s ease-in-out infinite alternate;
   }
 
   @keyframes fall {
-    to { top: 110vh; }
+    to { top: 120vh; }
+  }
+  @keyframes sway {
+    0% { transform: translateX(0) rotate(-8deg); }
+    50% { transform: translateX(18px) rotate(8deg); }
+    100% { transform: translateX(0) rotate(-8deg); }
   }
 </style>
 </head>
@@ -200,13 +215,18 @@
       <div class="flame"></div>
     </div>
 
-    <div class="envelope" onclick="openMsg()">✉️</div>
-    <div class="envelope-hint">Click the envelope 💌</div>
+  </div>
+
+  <!-- Envelope moved under the cake and centered -->
+  <div style="text-align:center;">
+    <div class="envelope" id="envelopeBtn" onclick="openMsg()">✉️</div>
+    <div class="envelope-hint" id="envelopeHint" onclick="openMsg()">Click the envelope 💌</div>
   </div>
 </div>
+
 <!-- MESSAGE -->
 <div class="modal" id="msgBox" onclick="closeMsg()">
-  <div class="modal-content">
+  <div class="modal-content" onclick="event.stopPropagation()">
     <h3>💌 A Message for Visal</h3>
     <p>
       Happy 21st, homie🤍<br>
@@ -225,7 +245,8 @@
 
   function startPage() {
     document.getElementById("startScreen").style.display = "none";
-    audio.play();
+    // attempt to play audio (browsers may block autoplay until user interacts)
+    audio.play().catch(()=>{ /* ignore autoplay block */ });
   }
 
   function openMsg() {
@@ -236,19 +257,74 @@
     document.getElementById("msgBox").style.display = "none";
   }
 
-  /* FALLING DECOR */
-  const items = ["⭐️","🤍","🌸","🎂"];
-  for (let i = 0; i < 24; i++) {
-    const el = document.createElement("div");
-    el.className = "fall";
-    el.innerText = items[Math.floor(Math.random()*items.length)];
-    el.style.left =
-      (Math.random() < 0.5
-        ? Math.random()*18
-        : 82 + Math.random()*18) + "vw";
-    el.style.animationDuration = (11 + Math.random()*6) + "s";
-    document.body.appendChild(el);
-  }
+  /* FALLING DECOR - improved behavior:
+     - Spread across the whole width (not only edges)
+     - Avoid spawning directly above the cake so they don't "ruin the surface"
+     - Natural stagger and sway
+  */
+  (function createFallingDecor() {
+    const items = ["⭐️","🤍","🌸","🎂"];
+    const numItems = 18; // fewer so they don't overwhelm the cake
+    const cakeEl = document.querySelector('.cake');
+
+    function getCakeRect() {
+      return cakeEl.getBoundingClientRect();
+    }
+
+    function randomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function randomFloat(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+    const cakePadding = 24; // px buffer around cake to avoid overlap
+    let cakeRect = getCakeRect();
+
+    // on resize update cake rect (doesn't move existing items but ensures new ones avoid cake)
+    window.addEventListener('resize', () => { cakeRect = getCakeRect(); });
+
+    for (let i = 0; i < numItems; i++) {
+      const el = document.createElement('div');
+      el.className = 'fall';
+
+      // inner span will sway/rotate while the container uses top animation
+      const inner = document.createElement('span');
+      inner.className = 'fall-inner';
+      inner.innerText = items[Math.floor(Math.random()*items.length)];
+      // random size slight variation
+      const fontSize = randomInt(20, 40);
+      inner.style.fontSize = fontSize + 'px';
+
+      el.appendChild(inner);
+
+      // choose a left (px) that's NOT over the cake area
+      let leftPx;
+      const maxAttempts = 30;
+      let attempts = 0;
+      do {
+        leftPx = Math.floor(Math.random() * (window.innerWidth - 40));
+        attempts++;
+      } while (
+        // avoid the horizontal region of the cake (with padding)
+        leftPx > (cakeRect.left - cakePadding) &&
+        leftPx < (cakeRect.right + cakePadding) &&
+        attempts < maxAttempts
+      );
+      // apply left
+      el.style.left = leftPx + 'px';
+      // random animation duration and delay
+      const dur = randomFloat(9, 16); // seconds to fall
+      const delay = randomFloat(0, 6); // stagger start
+      // we animate 'top' via the fall keyframes; set duration/delay inline
+      el.style.animation = fall ${dur}s linear ${delay}s infinite;
+      // also randomize opacity a bit
+      el.style.opacity = (0.7 + Math.random()*0.3).toFixed(2);
+
+      document.body.appendChild(el);
+    }
+  })();
 </script>
 
 </body>
